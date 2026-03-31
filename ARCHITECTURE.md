@@ -1,79 +1,24 @@
 # Aesthete — Architecture
 
-**Cross-media aesthetic recommendation engine built on embedding similarity and LLM reasoning.**
+**Aesthetic recommendation engine that exploits the knowledge already encoded in large language models.**
 
 ---
 
-## Overview
+## Core Philosophy
 
-Aesthete recommends media—films, books, music, games, art—based on a user's demonstrated taste profile, not their explicit genre preferences. It avoids boxing users into categories and surfaces recommendations that feel *discovered*, not predicted.
+Traditional recommendation systems require building and maintaining an external corpus—manually curated descriptions of films, books, music, and other media. Aesthete rejects this entirely. LLMs trained on vast corpora of human knowledge already contain rich, nuanced representations of aesthetic properties across every media type. Aesthete exploits this directly.
 
-The core philosophy: **people respond to aesthetic properties, not metadata labels.** Two works can share zero surface attributes yet trigger the same taste satisfaction. Aesthete exploits this to surface recommendations that feel serendipitous while being deeply personalized.
-
----
-
-## The Two Spaces
-
-Aesthete operates across two distinct vector spaces, each serving a different function:
-
-### Space 1: Content Embedding Space
-
-Every item in Aesthete's corpus exists as a dense vector in a shared embedding space. This space is pre-computed and static (updated on corpus rebuilds).
-
-Items cluster by deep aesthetic similarity—not genre, not modality, not creator. A slow-burn Tarkovsky film and a slow-burn ambient album might be nearest neighbors because the *quality of attention* they demand is similar. This is the emergent property of training on diverse textual data: the embedding captures dimensions humans don't consciously articulate.
-
-Corpus items include:
-- Films (text descriptions or reviews)
-- Books (descriptions, literary criticism)
-- Music (album descriptions, critical prose)
-- Games (design analysis, tone descriptions)
-- Visual art (formal analysis, critical context)
-
-The embedding model must place all modalities in the same latent space, or use a shared textual representation for all media types.
-
-### Space 2: User Taste Space
-
-Computed per-user, dynamic, derived from their explicitly provided preferences.
-
-A user does not map to a genre label. They map to a **taste vector**—a point in the content embedding space that represents "what this user responds to aesthetically." This vector is synthesized from their liked items, not averaged.
-
-The synthesis method: LLM-generated taste description, then embedded. This outperforms naive centroid approaches because:
-- It can hold contradictions (user likes X and Y for unrelated reasons)
-- It weights reasons, not just items
-- It produces coherent taste profiles even from eclectic input
+The system synthesizes a user's taste from their explicitly provided likes and dislikes, then queries an LLM to generate recommendations grounded in that taste profile. No embedding index, no corpus pipeline, no retrieval infrastructure—just the model's knowledge, unleashed by precise instruction.
 
 ---
 
-## The Problem with Naive Similarity
+## The Problem with Conventional Recommendations
 
-A naive system finds items *like* what the user likes. This produces obvious recommendations: "You liked Dune → here's more sci-fi." The user could have found this themselves.
+Genre-label systems are blunt instruments. "You liked Dune → here's more sci-fi" requires no intelligence and delivers no discovery.
 
-The interesting problem is finding items that:
-1. Match the user's taste profile
-2. Are NOT in their consumption history
-3. Are NOT obvious genre matches
+Even collaborative filtering (find users like you, recommend what they liked) stays within surface similarity. It finds the obvious. It doesn't find the *interesting*.
 
-This requires more than vector proximity. Aesthete addresses this through:
-
-### Negative Space Filtering
-
-```
-Candidate Score = 
-  PROXIMITY to taste vector
-  − PROXIMITY to disliked items
-  − PROXIMITY to already-consumed items
-```
-
-The negative signals carve out the obvious, forcing the system toward genuine discovery. A user who likes *Blade Runner* shouldn't just get *Blade Runner 2049*—they should get works that share its *atmosphere of technological melancholy* without sharing its genre label.
-
-### Compound Aesthetic Queries
-
-The LLM can generate compound embedding queries that no hand-coded taxonomy expresses:
-- "Works with the narrative ambiguity of A but the pacing of B"
-- "Something that has the atmosphere of C but ends like D"
-- "Media that subverts the expectations E establishes"
-
-These queries are embedded and used for retrieval, capturing aesthetic relationships that don't map to keywords.
+The real problem: **aesthetic properties are not taxonomic.** They don't map cleanly to genre labels, demographics, or any hand-crafted categorization. The things that make you respond to a film—its pacing, its visual philosophy, its relationship to silence, how it handles moral ambiguity—are emergent, cross-cutting, and difficult to articulate. LLMs learn these emergent properties implicitly from training data. Aesthete extracts them explicitly.
 
 ---
 
@@ -89,183 +34,147 @@ These queries are embedded and used for retrieval, capturing aesthetic relations
 ┌─────────────────────────────────────────────────────────────┐
 │                   TASTE PROFILER (LLM)                       │
 │  Analyzes liked items → extracts aesthetic properties       │
-│  Synthesizes → coherent taste description (avoids genre)   │
-│  Output: rich text taste profile                             │
+│  Synthesizes → coherent taste description                   │
+│  Output: structured taste profile                            │
 └─────────────────────────┬───────────────────────────────────┘
                           │
                           ▼
 ┌─────────────────────────────────────────────────────────────┐
-│                  TASTE VECTOR (embed)                        │
-│  Embed the taste description → Taste Vector (Space 2)        │
-└─────────────────────────┬───────────────────────────────────┘
-                          │
-                          ▼
-┌─────────────────────────────────────────────────────────────┐
-│                STAGE 1: EMBEDDING RETRIEVAL                 │
-│  Approximate nearest-neighbor search over corpus            │
-│  (Space 1: Content Embedding Space)                          │
-│  Filter: exclude consumed items, apply negative signals     │
-│  Output: top-N candidates (hundreds)                         │
-└─────────────────────────┬───────────────────────────────────┘
-                          │
-                          ▼
-┌─────────────────────────────────────────────────────────────┐
-│              STAGE 2: LLM REASONING (RE-RANK)                │
-│  For each candidate:                                         │
-│    - Does it genuinely match the taste profile?             │
-│    - Is the match at the right level (not surface)?         │
-│    - Any contradictions with explicitly disliked items?      │
-│  Re-rank candidates by reasoned fit                          │
-│  Output: top-M final recommendations (5-10)                 │
-└─────────────────────────┬───────────────────────────────────┘
-                          │
-                          ▼
-┌─────────────────────────────────────────────────────────────┐
-│                      DELIVERY                                │
-│  Each recommendation includes:                               │
-│    - Item name/description                                   │
-│    - Confidence score                                        │
-│    - Explanation: which taste properties it satisfies       │
+│              RECOMMENDATION ENGINE (LLM)                     │
+│  Prompt: "Given this taste profile, generate 8-12            │
+│  recommendations. For each: name, media type, why it         │
+│  matches. Avoid items similar to these dislikes."           │
+│  Output: ranked recommendations with reasoning              │
 └─────────────────────────────────────────────────────────────┘
 ```
 
+Two stages. Both use the same LLM. Both are stateless.
+
 ---
 
-## Key Components
+## Stage 1: Taste Profiler
 
-### 1. Corpus
+The taste profiler transforms a list of liked (and optionally disliked) items into a structured aesthetic profile.
 
-A curated, cross-media corpus of high-quality textual descriptions. Not the media itself—descriptions, reviews, critical analyses. The quality of recommendations depends heavily on corpus quality.
+**Input**: List of items the user has enjoyed. Format is flexible—titles, descriptions, or just names. The more items provided, the richer the profile.
 
-**Corpus size**: ~10,000–50,000 items across modalities. Quality over quantity; over 50k the retrieval-to-reasoning ratio degrades.
+**Output**: A taste profile covering:
+- **Aesthetic properties**: 5–8 specific dimensions the user responds to (e.g., "controlled ambiguity in moral situations," "visual density over visual clarity," "narratives that respect the viewer's time")
+- **Positive signals**: What draws the user in, what they seek
+- **Negative signals**: What pushes them away, what they actively avoid
+- **Tensions**: Contradictions in their taste (they enjoy X and Y for seemingly opposite reasons)
+- **Avoid list**: Explicit items or properties to exclude
 
-**Corpus rebuild**: Periodic, not continuous. Aesthete does not learn from user interactions by default (stateless). Rebuild cadence: monthly or on-demand.
-
-**Corpus format**: Each item is a structured record:
-```
-{
-  "id": "unique-id",
-  "title": "Work Title",
-  "type": "film|book|music|game|art",
-  "description": "Rich textual description (~200-500 words)",
-  "metadata": { ... } // optional: year, creator, etc.
-}
-```
-
-The `description` field is the embedded content. It must capture aesthetic properties, not just plot summary. Guidelines for corpus curation are in CORPUS.md.
-
-### 2. Embedding Engine
-
-**Model**: Any capable embedding model that places diverse text in a shared latent space. Choice depends on the corpus and desired trade-off between quality and cost.
-
-**Output**: 768–3072 dimensional dense vectors (model-dependent). All media types share the same embedding space.
-
-**Indexing**: Approximate Nearest Neighbor (ANN) index (e.g., FAISS, Qdrant, Weaviate) for fast retrieval over the full corpus. Index rebuilt on corpus rebuild.
-
-### 3. Taste Profiler
-
-An LLM prompt that takes in the user's liked items and produces a structured taste profile.
-
-**Input**: List of liked items (and optionally disliked items, with reasoning for why).
-
-**Output**: A taste profile in prose, covering:
-- 5–8 specific aesthetic properties the user responds to
-- Contradictions or tensions in their taste
-- Implicit preferences (what they seem to value even if not stated)
-- What to avoid (from disliked items or negative signals)
-
-**Prompt design principles**:
-- Never mention genre labels as primary descriptors
-- Focus on *how* media affects the user, not *what* it is
-- Preserve contradictions rather than smoothing them
-- Derive preferences from specific examples, don't assume
+**Principles**:
+- Profile is expressed in terms of *aesthetic properties*, not genre labels
+- Contradictions are preserved rather than resolved
+- Preferences are derived from specific examples, not assumed
+- The output feeds directly into the recommendation engine
 
 Sample output structure:
 ```
 Taste Profile:
-- Aesthetic Property 1: [description with evidence from liked items]
-- Aesthetic Property 2: [description with evidence]
+- Aesthetic Property 1: [description with examples from liked items]
+- Aesthetic Property 2: [description with examples]
 - ...
-- Contradiction: [if applicable]
 - Avoid: [what to steer clear of and why]
 ```
 
-### 4. Retrieval & Ranking Pipeline
+---
 
-**Stage 1** — ANN search:
-- Embed the taste description
-- Query the index for nearest neighbors
-- Exclude consumed items
-- Apply negative filtering against disliked items (if provided)
-- Return top 100-500 candidates
+## Stage 2: Recommendation Engine
 
-**Stage 2** — LLM re-ranking:
-- For each candidate, prompt the LLM to assess fit against the taste profile
-- Score candidates: strong match / moderate match / weak match
-- For borderline candidates: explicit reasoning about why they may or may not fit
-- Return top 5-10 final recommendations with explanations
+The recommendation engine receives the taste profile and generates personalized recommendations.
+
+**Input**: The taste profile + optional consumption history (items already experienced, to exclude)
+
+**Output**: 8–12 recommendations, each with:
+- Item name
+- Media type (film, book, music, game, etc.)
+- Explanation: which taste properties this item satisfies and why
+- Confidence: high / medium / moderate (calibrated from profile richness)
+
+**Prompt structure**:
+```
+You are a recommendation engine with deep knowledge of films, books, music,
+games, and visual art across all cultures and eras.
+
+Based on the following taste profile, generate 10 recommendations that
+genuinely match the user's aesthetic properties. Do NOT recommend items
+similar to the excluded list. Vary media types when appropriate.
+
+Taste Profile:
+{profile}
+
+Exclude these already-consumed items:
+{consumption_history}
+
+Respond with JSON or structured markdown.
+```
+
+**Key constraints**:
+- Explain *why* each recommendation matches—not just what it is
+- Match at the level of aesthetic properties, not surface similarity
+- Avoid items similar to explicitly disliked items (negative filtering)
+- Prioritize genuine discovery over obvious matches
 
 ---
 
-## Anti-Stereotyping Measures
+## Why This Works
 
-Aesthete explicitly avoids demographic inference and genre-label pigeonholing.
+LLMs encode vast amounts of aesthetic knowledge from training on reviews, criticism, analyses, wikis, forum discussions, and creative writing. This knowledge includes:
 
-**Rules**:
-1. Never infer preferences from user identity, assumed demographics, or cultural background
-2. Taste profiles derive exclusively from explicitly provided likes/dislikes
-3. Recommendations are justified by aesthetic properties, never by demographic patterns
-4. Contradictions in taste are preserved, not resolved
-5. Negative signals (dislikes) carry as much weight as positive signals
-6. Thin profiles (few items) produce tentative recommendations; rich profiles produce confident ones
+- **Cross-modal relationships**: Film critics compare films to novels; music reviewers invoke visual art; game critics use literary frameworks. This cross-pollination means the LLM learns aesthetic properties that transcend any single medium.
+- **Emergent clustering**: Through training, the model develops rich internal representations that reflect aesthetic similarity along dozens of implicit dimensions—most of which no hand-crafted taxonomy captures.
+- **Reasoning over retrieval**: Unlike embedding systems that find nearest neighbors, the LLM reasons about *why* an item matches. It can explain the relationship at the level of the taste profile, not just proximity in latent space.
 
-**Implementation**:
-- Taste profiler prompt explicitly instructs: "Do not reason about genre or demographic similarity"
-- Recommendation output requires explicit connection to taste properties, not labels
-- Confidence calibration: low item count → low confidence, high → higher confidence
+The key insight: embedding-based retrieval is powerful because it exploits these emergent properties. But it requires a static corpus. Using the LLM directly achieves the same result without the corpus overhead—trading fast retrieval for rich reasoning.
 
 ---
 
-## Why Embeddings Capture Aesthetic Similarity
+## Anti-Stereotyping Rules
 
-The honest answer: we don't fully know why large-scale text embeddings capture aesthetic similarity so effectively.
+Aesthete explicitly prevents demographic inference and genre-label pigeonholing.
 
-The dominant theory: during pre-training, the model develops rich internal representations that reflect every dimension along which texts relate—including aesthetic, tonal, philosophical dimensions that aren't consciously named in language but are embedded in the statistical structure of how texts cluster.
-
-When searching by embedding proximity, you search across dozens of implicit axes simultaneously, most of which no hand-crafted taxonomy could capture. This is why semantically different works can be neighbors in embedding space: the embedding has learned to group works by what they *ask of* the viewer or reader, not just what they *are*.
-
-This is the empirical foundation Aesthete exploits.
+1. **No demographic inference**: Do not assume preferences based on user identity, assumed background, or cultural framing
+2. **Explicit over implicit**: Only use what the user explicitly provides; do not fill gaps with assumptions
+3. **Aesthetic over taxonomic**: Match on aesthetic properties, not genre labels or surface categories
+4. **Preserve contradictions**: Don't resolve tensions in the taste profile—preserve them
+5. **Negative signals carry weight**: Dislikes are as informative as likes; exclude them explicitly
+6. **Confidence calibration**: Fewer input items → lower confidence; richer profile → higher confidence
 
 ---
 
 ## Scope & Limitations
 
 **What Aesthete does well**:
-- Cross-modal recommendation (film ↔ literature ↔ music ↔ games)
-- Non-obvious discovery (recommends against genre labels)
-- Handles eclectic, contradictory taste
-- Explains its reasoning
+- Leverages all knowledge in the LLM with no corpus maintenance
+- Handles cross-modal recommendations (film ↔ literature ↔ music ↔ games)
+- Explains reasoning in terms of taste properties
+- Handles contradictory and eclectic taste
+- Stateless—no feedback loop to maintain
 
-**What Aesthete does not do**:
-- Learn from user feedback continuously (stateless by default)
-- Handle real-time new media (corpus-bound)
-- Guarantee coverage of niche or obscure works (corpus-dependent)
-- Replace social recommendations (taste similarity between users is out of scope)
+**Limitations**:
+- LLM knowledge is bounded by training cutoff (no real-time media awareness)
+- Consistency varies by model and prompt quality
+- No grounded retrieval—relies on model's memory of items
+- Harder to verify coverage: how do you know what the model didn't consider?
 
-**Known failure modes**:
-- Very small taste profiles (2-3 items) produce unreliable taste vectors
-- Very contradictory taste (loves and hates nearly identical properties) may produce incoherent profiles
-- Corpus quality is paramount: bad descriptions → bad recommendations
+**Failure modes**:
+- Very few input items → unreliable taste profile
+- LLM may confabulate (present plausible but inaccurate descriptions)
+- Heavily contradicted taste may produce incoherent recommendations
+- Model may default to obvious/highly-referenced items when uncertain
 
 ---
 
-## Future Considerations (Out of Scope for v1)
+## Future Considerations
 
-- **Feedback loop**: Let users rate recommendations, incorporate signals back into taste profile
-- **Social taste matching**: Find users with similar taste profiles and cross-recommend
-- **Dynamic corpus**: Add new items continuously, not just on rebuilds
-- **Comparative ranking**: Instead of "recommend X", ask "do you prefer A or B?" for richer signal
-- **Multi-stage taste**: Coarse taste profile → refine with targeted questions
+- **Hybrid approach**: Use embeddings for initial candidate retrieval, LLM for reasoning—combines speed with depth
+- **Feedback loop**: Let users rate recommendations; incorporate signals to refine taste profile
+- **Coverage verification**: Adversarial prompting to check what the model didn't consider
+- **Comparative ranking**: "Do you prefer A or B?" interactions for richer taste learning
+- **Multi-model routing**: Route to specialized models for different media types
 
 ---
 
@@ -273,22 +182,16 @@ This is the empirical foundation Aesthete exploits.
 
 ```
 aesthete/
-├── ARCHITECTURE.md         # This file
-├── CORPUS.md              # Corpus curation guidelines
-├── SPEC.md                # Detailed technical specification
-├── README.md              # Project overview
-├── data/
-│   └── corpus/            # Corpus items (JSON or NDJSON)
+├── ARCHITECTURE.md    # This file
+├── SPEC.md            # Technical specification, prompt designs
+├── README.md          # Project overview
 ├── src/
-│   ├── embed.py           # Embedding pipeline
-│   ├── index.py           # ANN index construction
-│   ├── profile.py         # Taste profiler (LLM)
-│   ├── retrieve.py        # Stage 1 retrieval
-│   ├── rank.py            # Stage 2 re-ranking
-│   └── main.py            # CLI entry point
+│   ├── profile.py     # Taste profiler (LLM call)
+│   ├── recommend.py   # Recommendation engine (LLM call)
+│   └── main.py        # CLI entry point
 ├── prompts/
-│   ├── taste_profiler.md  # System prompt for taste profiling
-│   └── ranker.md          # System prompt for re-ranking
+│   ├── taste_profiler.md   # System prompt for taste profiling
+│   └── recommend.md        # System prompt for recommendations
 └── tests/
     └── ...
 ```
@@ -297,4 +200,6 @@ aesthete/
 
 ## Summary
 
-Aesthete recommends by modeling *why* a user responds to media, not by matching labels. The two-space architecture (content embeddings + synthesized taste vectors) enables cross-modal discovery that feels serendipitous. The LLM does the hard reasoning work; the embedding index handles fast retrieval at scale.
+Aesthete is a two-stage LLM pipeline: synthesize a taste profile from user preferences, then query the LLM directly for recommendations that match those properties. No corpus. No embedding infrastructure. The LLM's training knowledge is the knowledge base.
+
+The design prioritizes reasoning over retrieval, aesthetic matching over label matching, and discovery over the obvious.
