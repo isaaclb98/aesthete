@@ -6,7 +6,7 @@
   <title>Aesthete</title>
   <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.3/dist/css/bootstrap.min.css" rel="stylesheet">
   <style>
-    body { background: #0d1117; color: #e6edf3; }
+    body { background: #0d1117; color: #e6edf3; font-size: 16px; }
     .card { background: #161b22; border-color: #30363d; }
     .form-control, .form-select { background: #0d1117; border-color: #30363d; color: #e6edf3; }
     .form-control:focus, .form-select:focus { background: #0d1117; border-color: #58a6ff; color: #e6edf3; box-shadow: none; }
@@ -27,7 +27,12 @@
 
   {# ── Header ────────────────────────────────────────────────────────────── #}
   <div class="d-flex align-items-center justify-content-between mb-4">
-    <h1 class="mb-0">Aesthete</h1>
+    <h1 class="mb-0 d-flex align-items-center gap-2">
+      <svg xmlns="http://www.w3.org/2000/svg" width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="#58a6ff" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+        <polygon points="12 2 15.09 8.26 22 9.27 17 14.14 18.18 21.02 12 17.77 5.82 21.02 7 14.14 2 9.27 8.91 8.26 12 2"/>
+      </svg>
+      Aesthete
+    </h1>
     <form action="/clear" method="POST" class="mb-0">
       <button type="submit" class="btn btn-outline-secondary btn-sm">Clear</button>
     </form>
@@ -65,7 +70,7 @@
 
   {# ── Item list ────────────────────────────────────────────────────────── #}
   {% if items %}
-  <div class="card p-3 mb-3">
+  <div class="card p-3 mb-2">
     <p class="text-muted small mb-2">{{ items|length }} item{{ '' if items|length == 1 else 's' }} in your list</p>
     <ul class="list-group list-group-flush">
       {% for media_type, item_name in items %}
@@ -82,13 +87,20 @@
       </li>
       {% endfor %}
     </ul>
-    <form action="/recommend" method="POST" class="mt-3">
-      <button type="submit" class="btn btn-primary w-100">Get Recommendations</button>
+  </div>
+  {# ── Primary CTA ────────────────────────────────────────────────────── #}
+  <div class="card p-3 mb-3 text-center">
+    <form action="/recommend" method="POST">
+      <button type="submit" class="btn btn-primary w-100 py-2">Get Recommendations</button>
     </form>
   </div>
   {% else %}
-  <div class="card p-3 mb-3 text-center">
-    <p class="text-muted mb-0">Your list is empty. Add something you like above.</p>
+  <div class="card p-4 mb-3 text-center">
+    <svg xmlns="http://www.w3.org/2000/svg" width="32" height="32" viewBox="0 0 24 24" fill="none" stroke="#8b949e" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" class="mb-3" aria-hidden="true">
+      <circle cx="11" cy="11" r="8"/><path d="m21 21-4.35-4.35"/>
+    </svg>
+    <p class="text-muted mb-1">Your taste profile is empty.</p>
+    <p class="text-muted small mb-0">Add a few things you love above to get started.</p>
   </div>
   {% endif %}
 
