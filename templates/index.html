@@ -51,6 +51,7 @@
         <input type="text" class="form-control" id="media_type" name="media_type"
                list="media-type-suggestions" placeholder="film, book, music…">
         <datalist id="media-type-suggestions">
+          <option disabled value="">— pick a type —</option>
           {% for t in media_types %}
           <option value="{{ t }}">
           {% endfor %}
@@ -69,10 +70,11 @@
     <ul class="list-group list-group-flush">
       {% for media_type, item_name in items %}
       <li class="list-group-item item-row d-flex justify-content-between align-items-center"
-          style="background:transparent; border-color:#30363d; padding: 0.4rem 0;">
+          style="background:transparent; border-color:#30363d; padding: 0.4rem 0;"
+          aria-label="{{ media_type }}: {{ item_name }}">
         <span>
-          <span class="badge me-2">{{ media_type }}</span>
-          <span>{{ item_name }}</span>
+          <span class="badge me-2" aria-label="Type: {{ media_type }}">{{ media_type }}</span>
+          <span aria-label="Item: {{ item_name }}">{{ item_name }}</span>
         </span>
         <form action="/remove_item/{{ loop.index0 }}" method="POST" class="mb-0">
           <button type="submit" class="btn btn-outline-secondary btn-sm py-0 px-1">remove</button>
