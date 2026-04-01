@@ -9,9 +9,12 @@ import sys
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
 from recommend import (
-    build_prompt,
+    build_inference_prompt,
+    build_recommendation_prompt,
     call_openai,
+    generate_recommendations,
     group_by_media_type,
+    infer_taste,
     parse_response,
     read_file,
 )
@@ -47,23 +50,36 @@ class TestReadFile(unittest.TestCase):
             os.unlink(path)
 
 
-class TestBuildPrompt(unittest.TestCase):
-    def test_build_prompt_likes_only(self):
-        system, user = build_prompt(["The Godfather", "Dark Souls"])
-        self.assertIn("The Godfather, Dark Souls", system)
-        self.assertIn("The Godfather, Dark Souls", user)
-        # Dislikes should be "none" in the prompt
-        self.assertIn("none", user.lower())
-
-    def test_build_prompt_with_dislikes(self):
-        system, user = build_prompt(
-            ["The Godfather"],
-            ["Fast & Furious"]
-        )
-        self.assertIn("The Godfather", system)
-        self.assertIn("Fast & Furious", system)
+class TestBuildInferencePrompt(unittest.TestCase):
+    def test_inference_prompt_includes_likes(self):
+        system, user = build_inference_prompt(["The Godfather", "Dark Souls"])
+        self.assertIn("Favourites:", user)
         self.assertIn("The Godfather", user)
-        self.assertIn("Fast & Furious", user)
+        self.assertIn("Dark Souls", user)
+
+
+class TestBuildRecommendationPrompt(unittest.TestCase):
+    def test_recommendation_prompt_includes_taste_analysis(self):
+        taste = {
+            "core_dimensions": ["institutional power under moral ambiguity"],
+            "resonant_qualities": ["tonal restraint"],
+            "negative_space": ["commercial spectacle"],
+            "discovery_leverage": "look for works by directors who subvert genre expectations",
+        }
+        system, user = build_recommendation_prompt(taste, ["The Godfather"])
+        self.assertIn("institutional power under moral ambiguity", system)
+        self.assertIn("The Godfather", system)
+        self.assertIn("Generate recommendations", user)
+
+    def test_recommendation_prompt_includes_likes_raw(self):
+        taste = {
+            "core_dimensions": [],
+            "resonant_qualities": [],
+            "negative_space": [],
+            "discovery_leverage": ".",
+        }
+        system, user = build_recommendation_prompt(taste, ["Blonde"])
+        self.assertIn("Blonde", system)
 
 
 class TestParseResponse(unittest.TestCase):
@@ -145,8 +161,72 @@ class TestCallOpenAI(unittest.TestCase):
         self.assertIn("OPENAI_API_KEY is not set", str(ctx.exception))
 
 
+class TestInferTaste(unittest.TestCase):
+    @patch("recommend.call_openai")
+    def test_infer_taste_returns_parsed_analysis(self, mock_call_openai):
+        mock_call_openai.return_value = json.dumps({
+            "core_dimensions": ["institutional power"],
+            "resonant_qualities": ["tonal restraint"],
+            "negative_space": ["commercial spectacle"],
+            "discovery_leverage": "look for directors who subvert genre",
+        })
+
+        result = infer_taste(["The Godfather"])
+
+        self.assertEqual(result["core_dimensions"], ["institutional power"])
+        self.assertEqual(result["discovery_leverage"], "look for directors who subvert genre")
+        mock_call_openai.assert_called_once()
+
+    @patch("recommend.call_openai")
+    def test_infer_taste_missing_required_field_raises(self, mock_call_openai):
+        mock_call_openai.return_value = json.dumps({
+            "core_dimensions": ["institutional power"],
+            # missing resonant_qualities, negative_space, discovery_leverage
+        })
+
+        with self.assertRaises(ValueError) as ctx:
+            infer_taste(["The Godfather"])
+        self.assertIn("missing required fields", str(ctx.exception))
+
+
+class TestGenerateRecommendations(unittest.TestCase):
+    @patch("recommend.call_openai")
+    def test_generate_recommendations_returns_list(self, mock_call_openai):
+        mock_call_openai.return_value = json.dumps({
+            "recommendations": [
+                {"name": "Parasite", "media_type": "film", "reason": "...", "confidence": "high"}
+            ]
+        })
+
+        taste = {
+            "core_dimensions": ["institutional power"],
+            "resonant_qualities": [],
+            "negative_space": [],
+            "discovery_leverage": ".",
+        }
+        result = generate_recommendations(taste, ["The Godfather"])
+
+        self.assertEqual(len(result), 1)
+        self.assertEqual(result[0]["name"], "Parasite")
+
+    @patch("recommend.call_openai")
+    def test_generate_recommendations_empty_raises(self, mock_call_openai):
+        mock_call_openai.return_value = '{"recommendations": []}'
+
+        taste = {
+            "core_dimensions": [],
+            "resonant_qualities": [],
+            "negative_space": [],
+            "discovery_leverage": ".",
+        }
+
+        with self.assertRaises(ValueError) as ctx:
+            generate_recommendations(taste, ["The Godfather"])
+        self.assertIn("no recommendations", str(ctx.exception))
+
+
 class TestMainUnit(unittest.TestCase):
-    """Unit tests for main() error paths — no API calls needed."""
+    """Unit tests for main() error paths."""
 
     def _make_likes_file(self, content):
         f = tempfile.NamedTemporaryFile(mode="w", delete=False, suffix=".txt")
@@ -157,24 +237,34 @@ class TestMainUnit(unittest.TestCase):
     def _cleanup(self, path):
         os.unlink(path)
 
-    @patch("recommend.call_openai")
-    def test_main_dislikes_file_missing_proceeds(self, mock_call_openai):
-        mock_call_openai.return_value = '{"recommendations": [{"name": "X", "media_type": "film", "reason": "y", "confidence": "high"}]}'
+    @patch("recommend.generate_recommendations")
+    @patch("recommend.infer_taste")
+    def test_main_two_call_flow_succeeds(self, mock_infer, mock_generate):
+        mock_infer.return_value = {
+            "core_dimensions": ["institutional power"],
+            "resonant_qualities": [],
+            "negative_space": [],
+            "discovery_leverage": ".",
+        }
+        mock_generate.return_value = [
+            {"name": "Parasite", "media_type": "film", "reason": "...", "confidence": "high"}
+        ]
+
         likes_path = self._make_likes_file("The Godfather\n")
         try:
             from recommend import main
-            with patch("sys.argv", ["recommend.py", "--likes", likes_path, "--dislikes", "/nonexistent/file.txt"]):
+            with patch("sys.argv", ["recommend.py", "--likes", likes_path]):
                 with patch("sys.exit") as mock_exit:
                     main()
                     mock_exit.assert_not_called()
-            # Verify call_openai was invoked (dislikes missing file was skipped)
-            mock_call_openai.assert_called_once()
+            mock_infer.assert_called_once()
+            mock_generate.assert_called_once()
         finally:
             self._cleanup(likes_path)
 
-    @patch("recommend.call_openai")
-    def test_main_api_error_exits_1(self, mock_call_openai):
-        mock_call_openai.side_effect = RuntimeError("API error")
+    @patch("recommend.infer_taste")
+    def test_main_infer_taste_error_exits_1(self, mock_infer):
+        mock_infer.side_effect = RuntimeError("API error")
         likes_path = self._make_likes_file("The Godfather\n")
         try:
             from recommend import main
@@ -185,9 +275,16 @@ class TestMainUnit(unittest.TestCase):
         finally:
             self._cleanup(likes_path)
 
-    @patch("recommend.call_openai")
-    def test_main_json_parse_error_exits_1(self, mock_call_openai):
-        mock_call_openai.return_value = "not json at all"
+    @patch("recommend.generate_recommendations")
+    @patch("recommend.infer_taste")
+    def test_main_generate_error_exits_1(self, mock_infer, mock_generate):
+        mock_infer.return_value = {
+            "core_dimensions": [],
+            "resonant_qualities": [],
+            "negative_space": [],
+            "discovery_leverage": ".",
+        }
+        mock_generate.side_effect = RuntimeError("API error")
         likes_path = self._make_likes_file("The Godfather\n")
         try:
             from recommend import main
@@ -195,19 +292,6 @@ class TestMainUnit(unittest.TestCase):
                 with patch("sys.exit") as mock_exit:
                     main()
                     mock_exit.assert_called_with(1)
-        finally:
-            self._cleanup(likes_path)
-
-    @patch("recommend.call_openai")
-    def test_main_empty_recommendations_raises(self, mock_call_openai):
-        mock_call_openai.return_value = '{"recommendations": []}'
-        likes_path = self._make_likes_file("The Godfather\n")
-        try:
-            from recommend import main
-            with patch("sys.argv", ["recommend.py", "--likes", likes_path]):
-                with self.assertRaises(ValueError) as ctx:
-                    main()
-                self.assertIn("no recommendations", str(ctx.exception))
         finally:
             self._cleanup(likes_path)
 
@@ -233,28 +317,6 @@ class TestMainIntegration(unittest.TestCase):
                     mock_exit.assert_not_called()
         finally:
             os.unlink(likes_path)
-
-    @unittest.skipIf(not os.environ.get("OPENAI_API_KEY"), "No API key set")
-    def test_full_run_likes_dislikes(self):
-        with tempfile.NamedTemporaryFile(mode="w", delete=False, suffix=".txt") as f:
-            f.write("The Godfather\nBlonde\n")
-            f.flush()
-            likes_path = f.name
-
-        with tempfile.NamedTemporaryFile(mode="w", delete=False, suffix=".txt") as f:
-            f.write("Fast & Furious\n")
-            f.flush()
-            dislikes_path = f.name
-
-        try:
-            from recommend import main
-            with patch("sys.argv", ["recommend.py", "--likes", likes_path, "--dislikes", dislikes_path]):
-                with patch("sys.exit") as mock_exit:
-                    main()
-                    mock_exit.assert_not_called()
-        finally:
-            os.unlink(likes_path)
-            os.unlink(dislikes_path)
 
 
 if __name__ == "__main__":

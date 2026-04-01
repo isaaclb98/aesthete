@@ -1,8 +1,8 @@
 #!/usr/bin/env python3
 """
 Aesthete — LLM-powered recommendation engine.
-Reads liked/disliked items from text files and prints ranked,
-media-type-grouped recommendations from OpenAI.
+Reads liked items from a text file, infers taste profile via GPT-4o,
+then generates ranked, media-type-grouped recommendations.
 """
 
 import argparse
@@ -17,7 +17,8 @@ from dotenv import load_dotenv
 # Load API key from .env
 load_dotenv()
 
-SYSTEM_PROMPT_PATH = Path(__file__).parent / "prompts" / "recommend_system.md"
+INFERENCE_PROMPT_PATH = Path(__file__).parent / "prompts" / "infer_taste.md"
+RECOMMENDATION_PROMPT_PATH = Path(__file__).parent / "prompts" / "recommend_system.md"
 MAX_FILE_SIZE = 1024 * 1024  # 1 MB
 
 
@@ -30,19 +31,35 @@ def read_file(path: str) -> list[str]:
         return [line.strip() for line in f if line.strip()]
 
 
-def build_prompt(likes: list[str], dislikes: list[str] | None = None) -> tuple[str, str]:
+def _json_escape(items: list[str]) -> str:
+    """Join items as a JSON-raw string, stripped of surrounding quotes."""
+    return ", ".join(json.dumps(item)[1:-1] for item in items)
+
+
+def build_inference_prompt(likes: list[str]) -> tuple[str, str]:
     """
-    Build the system and user prompts from the template.
+    Build the system and user prompts for taste inference.
     Returns (system_prompt, user_prompt).
     """
-    system_template = SYSTEM_PROMPT_PATH.read_text(encoding="utf-8")
+    system_template = INFERENCE_PROMPT_PATH.read_text(encoding="utf-8")
+    likes_str = _json_escape(likes)
+    system_prompt = system_template
+    user_prompt = f"Favourites:\n{likes_str}"
+    return system_prompt, user_prompt
 
-    likes_str = ", ".join(json.dumps(item)[1:-1] for item in likes)
-    dislikes_str = ", ".join(json.dumps(item)[1:-1] for item in dislikes) if dislikes else "none"
 
-    system_prompt = system_template.format(likes=likes_str, dislikes=dislikes_str)
-
-    user_prompt = f"Liked: {likes_str}\nDisliked: {dislikes_str}\nExclude these already-consumed items: none\n\nGenerate recommendations that match the taste profile above."
+def build_recommendation_prompt(taste_analysis: dict, likes: list[str]) -> tuple[str, str]:
+    """
+    Build the system and user prompts for recommendation generation.
+    Returns (system_prompt, user_prompt).
+    """
+    system_template = RECOMMENDATION_PROMPT_PATH.read_text(encoding="utf-8")
+    likes_str = _json_escape(likes)
+    system_prompt = system_template.format(
+        taste_analysis=json.dumps(taste_analysis, indent=2),
+        likes=likes_str,
+    )
+    user_prompt = "Generate recommendations that match the taste profile above."
     return system_prompt, user_prompt
 
 
@@ -73,6 +90,40 @@ def call_openai(system_prompt: str, user_prompt: str, model: str = "gpt-4o") -> 
         raise ValueError("OpenAI returned an empty response (content is None)")
 
     return content
+
+
+def infer_taste(likes: list[str], model: str = "gpt-4o") -> dict:
+    """
+    Call the taste inference prompt and return the parsed taste analysis.
+    """
+    system_prompt, user_prompt = build_inference_prompt(likes)
+    raw = call_openai(system_prompt, user_prompt, model)
+    data = parse_response(raw)
+
+    required_keys = {"core_dimensions", "resonant_qualities", "negative_space", "discovery_leverage"}
+    if not required_keys.issubset(data.keys()):
+        missing = required_keys - set(data.keys())
+        raise ValueError(f"Taste inference missing required fields: {missing}")
+
+    return data
+
+
+def generate_recommendations(
+    taste_analysis: dict, likes: list[str], model: str = "gpt-4o"
+) -> list[dict]:
+    """
+    Call the recommendation prompt with the pre-computed taste analysis.
+    Returns a list of recommendation dicts.
+    """
+    system_prompt, user_prompt = build_recommendation_prompt(taste_analysis, likes)
+    raw = call_openai(system_prompt, user_prompt, model)
+    data = parse_response(raw)
+
+    recommendations = data.get("recommendations", [])
+    if not recommendations:
+        raise ValueError("no recommendations in response")
+
+    return recommendations
 
 
 def parse_response(raw: str) -> dict:
@@ -132,10 +183,6 @@ def main() -> None:
         help="Path to text file with liked items (one per line)",
     )
     parser.add_argument(
-        "--dislikes",
-        help="Path to text file with disliked items (one per line, optional)",
-    )
-    parser.add_argument(
         "--model",
         default="gpt-4o",
         help="OpenAI model to use (default: gpt-4o)",
@@ -148,45 +195,30 @@ def main() -> None:
     except FileNotFoundError:
         print(f"Error: file not found: {args.likes}", file=sys.stderr)
         sys.exit(1)
+        return  # unreachable in normal execution; needed when sys.exit is mocked
 
     if not likes:
         raise ValueError("likes file is empty")
 
-    # Read dislikes (optional)
-    dislikes = None
-    if args.dislikes:
-        try:
-            dislikes = read_file(args.dislikes)
-        except FileNotFoundError:
-            # Skip dislikes if file is missing
-            pass
-
-    # Build prompt
-    system_prompt, user_prompt = build_prompt(likes, dislikes)
-
-    # Call API
+    # Step 1: infer taste
     try:
-        raw = call_openai(system_prompt, user_prompt, args.model)
+        taste_analysis = infer_taste(likes, args.model)
     except Exception as e:
         print(f"Error: {e}", file=sys.stderr)
         sys.exit(1)
         return  # unreachable in normal execution; needed when sys.exit is mocked
 
-    # Parse response
+    # Step 2: generate recommendations
     try:
-        data = parse_response(raw)
-    except ValueError as e:
+        recommendations = generate_recommendations(taste_analysis, likes, args.model)
+    except Exception as e:
         print(f"Error: {e}", file=sys.stderr)
         sys.exit(1)
         return  # unreachable in normal execution; needed when sys.exit is mocked
 
-    recommendations = data.get("recommendations", [])
-    if not recommendations:
-        raise ValueError("no recommendations in response")
-
     # Group and print
     grouped = group_by_media_type(recommendations)
-    print_json({"recommendations": grouped})
+    print_json({"taste_analysis": taste_analysis, "recommendations": grouped})
 
 
 if __name__ == "__main__":
