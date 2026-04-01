@@ -102,6 +102,14 @@ class TestGroupByMediaType(unittest.TestCase):
         result = group_by_media_type([])
         self.assertEqual(result, OrderedDict())
 
+    def test_group_by_media_type_missing_media_type_key(self):
+        recs = [
+            {"name": "Parasite", "reason": "...", "confidence": "high"},
+        ]
+        result = group_by_media_type(recs)
+        self.assertIn("unknown", result)
+        self.assertEqual(result["unknown"][0]["rank"], 1)
+
 
 class TestCallOpenAI(unittest.TestCase):
     @patch("openai.OpenAI")
@@ -135,6 +143,73 @@ class TestCallOpenAI(unittest.TestCase):
             with self.assertRaises(RuntimeError) as ctx:
                 call_openai("system prompt", "user prompt")
         self.assertIn("OPENAI_API_KEY is not set", str(ctx.exception))
+
+
+class TestMainUnit(unittest.TestCase):
+    """Unit tests for main() error paths — no API calls needed."""
+
+    def _make_likes_file(self, content):
+        f = tempfile.NamedTemporaryFile(mode="w", delete=False, suffix=".txt")
+        f.write(content)
+        f.flush()
+        return f.name
+
+    def _cleanup(self, path):
+        os.unlink(path)
+
+    @patch("recommend.call_openai")
+    def test_main_dislikes_file_missing_proceeds(self, mock_call_openai):
+        mock_call_openai.return_value = '{"recommendations": [{"name": "X", "media_type": "film", "reason": "y", "confidence": "high"}]}'
+        likes_path = self._make_likes_file("The Godfather\n")
+        try:
+            from recommend import main
+            with patch("sys.argv", ["recommend.py", "--likes", likes_path, "--dislikes", "/nonexistent/file.txt"]):
+                with patch("sys.exit") as mock_exit:
+                    main()
+                    mock_exit.assert_not_called()
+            # Verify call_openai was invoked (dislikes missing file was skipped)
+            mock_call_openai.assert_called_once()
+        finally:
+            self._cleanup(likes_path)
+
+    @patch("recommend.call_openai")
+    def test_main_api_error_exits_1(self, mock_call_openai):
+        mock_call_openai.side_effect = RuntimeError("API error")
+        likes_path = self._make_likes_file("The Godfather\n")
+        try:
+            from recommend import main
+            with patch("sys.argv", ["recommend.py", "--likes", likes_path]):
+                with patch("sys.exit") as mock_exit:
+                    main()
+                    mock_exit.assert_called_with(1)
+        finally:
+            self._cleanup(likes_path)
+
+    @patch("recommend.call_openai")
+    def test_main_json_parse_error_exits_1(self, mock_call_openai):
+        mock_call_openai.return_value = "not json at all"
+        likes_path = self._make_likes_file("The Godfather\n")
+        try:
+            from recommend import main
+            with patch("sys.argv", ["recommend.py", "--likes", likes_path]):
+                with patch("sys.exit") as mock_exit:
+                    main()
+                    mock_exit.assert_called_with(1)
+        finally:
+            self._cleanup(likes_path)
+
+    @patch("recommend.call_openai")
+    def test_main_empty_recommendations_raises(self, mock_call_openai):
+        mock_call_openai.return_value = '{"recommendations": []}'
+        likes_path = self._make_likes_file("The Godfather\n")
+        try:
+            from recommend import main
+            with patch("sys.argv", ["recommend.py", "--likes", likes_path]):
+                with self.assertRaises(ValueError) as ctx:
+                    main()
+                self.assertIn("no recommendations", str(ctx.exception))
+        finally:
+            self._cleanup(likes_path)
 
 
 class TestMainIntegration(unittest.TestCase):

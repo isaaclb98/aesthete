@@ -18,11 +18,15 @@ from dotenv import load_dotenv
 load_dotenv()
 
 SYSTEM_PROMPT_PATH = Path(__file__).parent / "prompts" / "recommend_system.md"
+MAX_FILE_SIZE = 1024 * 1024  # 1 MB
 
 
 def read_file(path: str) -> list[str]:
     """Read a text file, one item per line. Strip whitespace, filter empty lines."""
     with open(path, "r", encoding="utf-8") as f:
+        if f.seek(0, 2) > MAX_FILE_SIZE:
+            raise ValueError(f"File too large (max {MAX_FILE_SIZE} bytes): {path}")
+        f.seek(0)
         return [line.strip() for line in f if line.strip()]
 
 
@@ -33,8 +37,8 @@ def build_prompt(likes: list[str], dislikes: list[str] | None = None) -> tuple[s
     """
     system_template = SYSTEM_PROMPT_PATH.read_text(encoding="utf-8")
 
-    likes_str = ", ".join(likes)
-    dislikes_str = ", ".join(dislikes) if dislikes else "none"
+    likes_str = ", ".join(json.dumps(item)[1:-1] for item in likes)
+    dislikes_str = ", ".join(json.dumps(item)[1:-1] for item in dislikes) if dislikes else "none"
 
     system_prompt = system_template.format(likes=likes_str, dislikes=dislikes_str)
 
@@ -44,7 +48,7 @@ def build_prompt(likes: list[str], dislikes: list[str] | None = None) -> tuple[s
 
 def call_openai(system_prompt: str, user_prompt: str, model: str = "gpt-4o") -> str:
     """Call the OpenAI API and return the raw response text."""
-    api_key = os.environ.get("OPENAI_API_KEY")
+    api_key = os.environ.get("OPENAI_API_KEY", "")
     if not api_key:
         raise RuntimeError(
             "OPENAI_API_KEY is not set. Create a .env file with OPENAI_API_KEY=sk-..."
@@ -52,7 +56,7 @@ def call_openai(system_prompt: str, user_prompt: str, model: str = "gpt-4o") -> 
 
     from openai import OpenAI
 
-    client = OpenAI(api_key=api_key)
+    client = OpenAI(api_key=api_key, timeout=30.0)
     response = client.chat.completions.create(
         model=model,
         messages=[
@@ -60,7 +64,15 @@ def call_openai(system_prompt: str, user_prompt: str, model: str = "gpt-4o") -> 
             {"role": "user", "content": user_prompt},
         ],
     )
-    return response.choices[0].message.content
+
+    if not response.choices:
+        raise ValueError("OpenAI returned no choices")
+
+    content = response.choices[0].message.content
+    if content is None:
+        raise ValueError("OpenAI returned an empty response (content is None)")
+
+    return content
 
 
 def parse_response(raw: str) -> dict:
@@ -98,7 +110,7 @@ def group_by_media_type(recommendations: list[dict]) -> OrderedDict[str, list[di
         media_type = rec.get("media_type", "unknown")
         if media_type not in groups:
             groups[media_type] = []
-        groups[media_type].append(rec)
+        groups[media_type].append({**rec})
 
     for media_type, recs in groups.items():
         for i, rec in enumerate(recs, start=1):
@@ -158,6 +170,7 @@ def main() -> None:
     except Exception as e:
         print(f"Error: {e}", file=sys.stderr)
         sys.exit(1)
+        return  # unreachable in normal execution; needed when sys.exit is mocked
 
     # Parse response
     try:
@@ -165,6 +178,7 @@ def main() -> None:
     except ValueError as e:
         print(f"Error: {e}", file=sys.stderr)
         sys.exit(1)
+        return  # unreachable in normal execution; needed when sys.exit is mocked
 
     recommendations = data.get("recommendations", [])
     if not recommendations:
