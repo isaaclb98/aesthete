@@ -1,13 +1,26 @@
-# Plan: Aesthete — Two-Call LLM Recommendation Architecture
+# Plan: Aesthete — Typed Input, Proportional + Cross-Media Recs
 
 ## What changed
 
-v1 was a single API call — the model inferred taste and generated recs simultaneously, which produced shallow surface-similarity matches. v1.1 separates into two calls:
+v0.2.0 had a two-call architecture with raw item input (no media types) and a single grouped recommendations output. This version introduces:
 
-1. **Taste inference call** — model analyses the likes list and articulates core aesthetic dimensions, resonant qualities, negative space, and discovery leverage
-2. **Recommendation call** — model generates recs guided by the articulated taste profile, not raw item similarity
+**Input format:** `media_type: item_name` per line. Any media type is valid — K-pop, opera, anime, whatever the user actually listens to. No fixed enum.
 
-Dislikes were removed entirely (too high a cognitive burden on users to articulate what they hate).
+**Proportional recommendations:** Within the media types the user listed. The model uses input proportions as a soft guide (80% films in input → lean toward more film recs). Reflects where the user's aesthetic attention lives.
+
+**Cross-media recommendations:** 2-4 recommendations in media types the user did NOT mention. Genuine left-field discoveries — the model uses discovery_leverage to find things the user would love but never considered.
+
+**Output structure:**
+```json
+{
+  "taste_analysis": { ... },
+  "proportional_recommendations": {
+    "film": [{rank, name, media_type, reason, confidence}],
+    "music": [...]
+  },
+  "cross_media_recommendations": [{rank, name, media_type, reason, confidence}]
+}
+```
 
 ## File structure
 
@@ -18,7 +31,7 @@ aesthete/
 │   ├── infer_taste.md         # Taste inference prompt (call 1)
 │   └── recommend_system.md    # Recommendation prompt (call 2)
 └── tests/
-    └── test_recommend.py      # 23 tests
+    └── test_recommend.py      # 25 tests
 ```
 
 ## Data flow
@@ -28,41 +41,30 @@ recommend.py
   │
   ├── argparse → reads --likes (no --dislikes)
   │
-  ├── read_file() → strip lines, filter empty, return list[str]
+  ├── read_file() → parses "media_type: item_name" lines, returns list[(type, name)]
   │
-  ├── infer_taste(likes)
-  │   ├── build_inference_prompt(likes) → (system, user)
-  │   ├── call_openai(system, user)
-  │   └── parse_response(raw) → taste_analysis dict
+  ├── infer_taste(likes) → taste_analysis dict
   │
   ├── generate_recommendations(taste_analysis, likes)
-  │   ├── build_recommendation_prompt(taste_analysis, likes) → (system, user)
-  │   ├── call_openai(system, user)
-  │   ├── parse_response(raw)
-  │   └── returns list[dict]
+  │   → returns (proportional_recommendations, cross_media_recommendations)
   │
-  ├── group_by_media_type(recommendations) → OrderedDict
+  ├── group_by_media_type(proportional_recommendations) → OrderedDict
   │
-  └── print_json({taste_analysis, recommendations})
+  └── print_json({taste_analysis, proportional_recommendations, cross_media_recommendations})
 ```
 
-## Output format
+## Input format examples
 
-```json
-{
-  "taste_analysis": {
-    "core_dimensions": ["..."],
-    "resonant_qualities": ["..."],
-    "negative_space": ["..."],
-    "discovery_leverage": "..."
-  },
-  "recommendations": {
-    "film": [{"rank": 1, "name": "...", "media_type": "film", "reason": "...", "confidence": "high"}],
-    "book": [...],
-    ...
-  }
-}
 ```
+film: The Godfather
+film: Parasite
+music: Blonde
+k-pop: BTS
+opera: Carmen
+game: Factorio
+```
+
+Bare items (no `media_type:` prefix) default to `unknown` type.
 
 ## NOT in scope
 

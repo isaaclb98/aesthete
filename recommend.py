@@ -1,8 +1,8 @@
 #!/usr/bin/env python3
 """
 Aesthete — LLM-powered recommendation engine.
-Reads liked items from a text file, infers taste profile via GPT-4o,
-then generates ranked, media-type-grouped recommendations.
+Reads liked items from a text file (format: "media_type: item_name"),
+infers taste profile via GPT-4o, then generates proportional and cross-media recommendations.
 """
 
 import argparse
@@ -22,42 +22,75 @@ RECOMMENDATION_PROMPT_PATH = Path(__file__).parent / "prompts" / "recommend_syst
 MAX_FILE_SIZE = 1024 * 1024  # 1 MB
 
 
-def read_file(path: str) -> list[str]:
-    """Read a text file, one item per line. Strip whitespace, filter empty lines."""
+def read_file(path: str) -> list[tuple[str, str]]:
+    """
+    Read a text file, one item per line, in "media_type: item_name" format.
+    Returns list of (media_type, item_name) tuples.
+    """
     with open(path, "r", encoding="utf-8") as f:
         if f.seek(0, 2) > MAX_FILE_SIZE:
             raise ValueError(f"File too large (max {MAX_FILE_SIZE} bytes): {path}")
         f.seek(0)
-        return [line.strip() for line in f if line.strip()]
+        items = []
+        for line in f:
+            line = line.strip()
+            if not line:
+                continue
+            # Split on first ": " to separate media_type from item name
+            if ": " in line:
+                media_type, item_name = line.split(": ", 1)
+                items.append((media_type.strip(), item_name.strip()))
+            else:
+                # Bare item — treat as unknown type
+                items.append(("unknown", line))
+        return items
 
 
-def _json_escape(items: list[str]) -> str:
-    """Join items as a JSON-raw string, stripped of surrounding quotes."""
-    return ", ".join(json.dumps(item)[1:-1] for item in items)
+def _format_likes_for_prompt(likes: list[tuple[str, str]]) -> str:
+    """Format typed likes as lines for prompt injection."""
+    return "\n".join(f"{media_type}: {item}" for media_type, item in likes)
 
 
-def build_inference_prompt(likes: list[str]) -> tuple[str, str]:
+def _compute_proportions(likes: list[tuple[str, str]]) -> str:
+    """Compute input proportions for the recommendation prompt."""
+    total = len(likes)
+    if total == 0:
+        return "No input types recorded."
+    type_counts: dict[str, int] = {}
+    for media_type, _ in likes:
+        type_counts[media_type] = type_counts.get(media_type, 0) + 1
+    parts = []
+    for media_type, count in sorted(type_counts.items(), key=lambda x: -x[1]):
+        pct = round(count / total * 100)
+        parts.append(f"{pct}% {media_type} ({count} item{'s' if count > 1 else ''})")
+    return ", ".join(parts)
+
+
+def build_inference_prompt(likes: list[tuple[str, str]]) -> tuple[str, str]:
     """
     Build the system and user prompts for taste inference.
     Returns (system_prompt, user_prompt).
     """
     system_template = INFERENCE_PROMPT_PATH.read_text(encoding="utf-8")
-    likes_str = _json_escape(likes)
+    likes_str = _format_likes_for_prompt(likes)
     system_prompt = system_template
     user_prompt = f"Favourites:\n{likes_str}"
     return system_prompt, user_prompt
 
 
-def build_recommendation_prompt(taste_analysis: dict, likes: list[str]) -> tuple[str, str]:
+def build_recommendation_prompt(
+    taste_analysis: dict, likes: list[tuple[str, str]]
+) -> tuple[str, str]:
     """
     Build the system and user prompts for recommendation generation.
     Returns (system_prompt, user_prompt).
     """
     system_template = RECOMMENDATION_PROMPT_PATH.read_text(encoding="utf-8")
-    likes_str = _json_escape(likes)
+    likes_str = _format_likes_for_prompt(likes)
+    proportions = _compute_proportions(likes)
     system_prompt = system_template.format(
         taste_analysis=json.dumps(taste_analysis, indent=2),
-        likes=likes_str,
+        likes=f"{likes_str}\n\nInput proportions: {proportions}",
     )
     user_prompt = "Generate recommendations that match the taste profile above."
     return system_prompt, user_prompt
@@ -92,7 +125,7 @@ def call_openai(system_prompt: str, user_prompt: str, model: str = "gpt-4o") -> 
     return content
 
 
-def infer_taste(likes: list[str], model: str = "gpt-4o") -> dict:
+def infer_taste(likes: list[tuple[str, str]], model: str = "gpt-4o") -> dict:
     """
     Call the taste inference prompt and return the parsed taste analysis.
     """
@@ -109,21 +142,23 @@ def infer_taste(likes: list[str], model: str = "gpt-4o") -> dict:
 
 
 def generate_recommendations(
-    taste_analysis: dict, likes: list[str], model: str = "gpt-4o"
-) -> list[dict]:
+    taste_analysis: dict, likes: list[tuple[str, str]], model: str = "gpt-4o"
+) -> tuple[list[dict], list[dict]]:
     """
     Call the recommendation prompt with the pre-computed taste analysis.
-    Returns a list of recommendation dicts.
+    Returns (proportional_recommendations, cross_media_recommendations).
     """
     system_prompt, user_prompt = build_recommendation_prompt(taste_analysis, likes)
     raw = call_openai(system_prompt, user_prompt, model)
     data = parse_response(raw)
 
-    recommendations = data.get("recommendations", [])
-    if not recommendations:
+    proportional = data.get("proportional_recommendations", [])
+    cross_media = data.get("cross_media_recommendations", [])
+
+    if not proportional and not cross_media:
         raise ValueError("no recommendations in response")
 
-    return recommendations
+    return proportional, cross_media
 
 
 def parse_response(raw: str) -> dict:
@@ -135,9 +170,7 @@ def parse_response(raw: str) -> dict:
 
     # Strip markdown code block wrapper if present
     if text.startswith("```"):
-        # Remove the first line (```json or ```) and trailing ```
         lines = text.splitlines()
-        # Find the last ``` line
         for i in range(len(lines) - 1, -1, -1):
             if lines[i].strip() == "```":
                 lines = lines[1:i]
@@ -180,7 +213,7 @@ def main() -> None:
     parser.add_argument(
         "--likes",
         required=True,
-        help="Path to text file with liked items (one per line)",
+        help='Path to text file with liked items (one per line, format: "media_type: item_name")',
     )
     parser.add_argument(
         "--model",
@@ -210,15 +243,19 @@ def main() -> None:
 
     # Step 2: generate recommendations
     try:
-        recommendations = generate_recommendations(taste_analysis, likes, args.model)
+        proportional, cross_media = generate_recommendations(taste_analysis, likes, args.model)
     except Exception as e:
         print(f"Error: {e}", file=sys.stderr)
         sys.exit(1)
         return  # unreachable in normal execution; needed when sys.exit is mocked
 
-    # Group and print
-    grouped = group_by_media_type(recommendations)
-    print_json({"taste_analysis": taste_analysis, "recommendations": grouped})
+    # Group proportional recs by media type
+    grouped_proportional = group_by_media_type(proportional)
+    print_json({
+        "taste_analysis": taste_analysis,
+        "proportional_recommendations": grouped_proportional,
+        "cross_media_recommendations": cross_media,
+    })
 
 
 if __name__ == "__main__":
