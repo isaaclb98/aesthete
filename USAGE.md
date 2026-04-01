@@ -26,7 +26,7 @@ open http://localhost:5000
 
 ## Using the web UI
 
-**Add items** — Enter a name (e.g. "The Godfather") and select its type (e.g. "film"), then click Add. The item appears in your list.
+**Add items** — Enter a name (e.g. "The Godfather") and pick or type a type (e.g. "film"), then click Add. The item appears in your list.
 
 **Get recommendations** — Click "Get Recommendations". Aesthete runs two LLM calls:
 1. Infers your taste profile from your item list
@@ -38,14 +38,13 @@ open http://localhost:5000
 
 ## Item format
 
-Items are typed: a media type and a name per item. The form enforces this. Accepted types include:
+Items are typed: a media type and a name per item. The form has a text field with suggestions for the type. Suggested types:
 
 ```
-film  book  music  tv  game  visual_art
-anime  podcast  k-pop  opera  stage  other
+film  book  music  tv  game
 ```
 
-You can type a custom type not in the dropdown — any string is accepted.
+You can type any custom type not in the list — Aesthete accepts any string.
 
 ## What the output means
 
