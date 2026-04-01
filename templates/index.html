@@ -1,0 +1,168 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Aesthete</title>
+  <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.3/dist/css/bootstrap.min.css" rel="stylesheet">
+  <style>
+    body { background: #0d1117; color: #e6edf3; }
+    .card { background: #161b22; border-color: #30363d; }
+    .form-control, .form-select { background: #0d1117; border-color: #30363d; color: #e6edf3; }
+    .form-control:focus, .form-select:focus { background: #0d1117; border-color: #58a6ff; color: #e6edf3; box-shadow: none; }
+    .btn-primary { background: #238636; border-color: #238636; }
+    .btn-primary:hover { background: #2ea043; border-color: #2ea043; }
+    .btn-outline-secondary { border-color: #30363d; color: #8b949e; }
+    .btn-outline-secondary:hover { background: #21262d; border-color: #8b949e; color: #e6edf3; }
+    .text-muted { color: #8b949e !important; }
+    .rec-card { background: #0d1117; border-color: #30363d; }
+    .badge { background: #388bfd26; color: #58a6ff; }
+    h1, h2, h5 { color: #e6edf3; }
+    .section-divider { border-color: #30363d; }
+    .item-row:hover { background: #161b22; }
+  </style>
+</head>
+<body>
+<div class="container py-5" style="max-width: 760px;">
+
+  {# ── Header ────────────────────────────────────────────────────────────── #}
+  <div class="d-flex align-items-center justify-content-between mb-4">
+    <h1 class="mb-0">Aesthete</h1>
+    <form action="/clear" method="POST" class="mb-0">
+      <button type="submit" class="btn btn-outline-secondary btn-sm">Clear</button>
+    </form>
+  </div>
+
+  {# ── Error banner ─────────────────────────────────────────────────────── #}
+  {% if error %}
+  <div class="alert alert-danger py-2" role="alert">{{ error }}</div>
+  {% endif %}
+
+  {# ── Add-item form ─────────────────────────────────────────────────────── #}
+  <div class="card p-3 mb-3">
+    <form action="/add_item" method="POST" class="row g-2 align-items-end">
+      <div class="col-7">
+        <label for="item_name" class="form-label text-muted small">Item name</label>
+        <input type="text" class="form-control" id="item_name" name="item_name"
+               placeholder="e.g. The Godfather" autocomplete="off" required>
+      </div>
+      <div class="col-3">
+        <label for="media_type" class="form-label text-muted small">Type</label>
+        <input type="text" class="form-control" id="media_type" name="media_type"
+               list="media-type-suggestions" placeholder="film, book, music…">
+        <datalist id="media-type-suggestions">
+          {% for t in media_types %}
+          <option value="{{ t }}">
+          {% endfor %}
+        </datalist>
+      </div>
+      <div class="col-2">
+        <button type="submit" class="btn btn-primary w-100">Add</button>
+      </div>
+    </form>
+  </div>
+
+  {# ── Item list ────────────────────────────────────────────────────────── #}
+  {% if items %}
+  <div class="card p-3 mb-3">
+    <p class="text-muted small mb-2">{{ items|length }} item{{ '' if items|length == 1 else 's' }} in your list</p>
+    <ul class="list-group list-group-flush">
+      {% for media_type, item_name in items %}
+      <li class="list-group-item item-row d-flex justify-content-between align-items-center"
+          style="background:transparent; border-color:#30363d; padding: 0.4rem 0;">
+        <span>
+          <span class="badge me-2">{{ media_type }}</span>
+          <span>{{ item_name }}</span>
+        </span>
+        <form action="/remove_item/{{ loop.index0 }}" method="POST" class="mb-0">
+          <button type="submit" class="btn btn-outline-secondary btn-sm py-0 px-1">remove</button>
+        </form>
+      </li>
+      {% endfor %}
+    </ul>
+    <form action="/recommend" method="POST" class="mt-3">
+      <button type="submit" class="btn btn-primary w-100">Get Recommendations</button>
+    </form>
+  </div>
+  {% else %}
+  <div class="card p-3 mb-3 text-center">
+    <p class="text-muted mb-0">Your list is empty. Add something you like above.</p>
+  </div>
+  {% endif %}
+
+  {# ── Results ──────────────────────────────────────────────────────────── #}
+  {% if taste_analysis %}
+  <hr class="section-divider my-4">
+
+  {# Taste Analysis #}
+  <div class="card p-4 mb-3">
+    <h2 class="h5 mb-3">Taste Analysis</h2>
+    <div class="mb-3">
+      <p class="text-muted small mb-1">Core dimensions</p>
+      <p class="mb-2" style="color:#e6edf3;">{{ taste_analysis.core_dimensions }}</p>
+    </div>
+    <div class="mb-3">
+      <p class="text-muted small mb-1">Resonant qualities</p>
+      <p class="mb-2" style="color:#e6edf3;">{{ taste_analysis.resonant_qualities }}</p>
+    </div>
+    <div class="mb-3">
+      <p class="text-muted small mb-1">Negative space</p>
+      <p class="mb-2" style="color:#e6edf3;">{{ taste_analysis.negative_space }}</p>
+    </div>
+    <div>
+      <p class="text-muted small mb-1">Discovery leverage</p>
+      <p class="mb-0" style="color:#e6edf3;">{{ taste_analysis.discovery_leverage }}</p>
+    </div>
+  </div>
+
+  {# Proportional Recommendations #}
+  {% if proportional %}
+  <div class="card p-4 mb-3">
+    <h2 class="h5 mb-3">Proportional Recommendations</h2>
+    {% for media_type, recs in proportional.items() %}
+    <div class="mb-3">
+      <p class="text-muted small mb-2">[{{ media_type }}]</p>
+      {% for rec in recs %}
+      <div class="rec-card card p-2 mb-2">
+        <div class="d-flex justify-content-between align-items-start">
+          <div>
+            <strong>{{ rec.rank }}. {{ rec.name }}</strong>
+            {% if rec.year %} <span class="text-muted">({{ rec.year }})</span>{% endif %}
+          </div>
+          {% if rec.confidence %}
+          <span class="badge">{{ rec.confidence }}</span>
+          {% endif %}
+        </div>
+        {% if rec.reason %}<p class="text-muted small mb-0 mt-1">{{ rec.reason }}</p>{% endif %}
+      </div>
+      {% endfor %}
+    </div>
+    {% endfor %}
+  </div>
+  {% endif %}
+
+  {# Cross-Media Discoveries #}
+  {% if cross_media %}
+  <div class="card p-4 mb-3">
+    <h2 class="h5 mb-3">Cross-Media Discoveries</h2>
+    {% for rec in cross_media %}
+    <div class="rec-card card p-2 mb-2">
+      <div class="d-flex justify-content-between align-items-start">
+        <div>
+          <strong>{{ loop.index }}. [{{ rec.media_type }}] {{ rec.name }}</strong>
+          {% if rec.year %} <span class="text-muted">({{ rec.year }})</span>{% endif %}
+        </div>
+        {% if rec.confidence %}
+        <span class="badge">{{ rec.confidence }}</span>
+        {% endif %}
+      </div>
+      {% if rec.reason %}<p class="text-muted small mb-0 mt-1">{{ rec.reason }}</p>{% endif %}
+    </div>
+    {% endfor %}
+  </div>
+  {% endif %}
+  {% endif %}
+
+</div>
+</body>
+</html>
