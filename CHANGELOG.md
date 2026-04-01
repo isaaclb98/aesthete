@@ -1,5 +1,18 @@
 # Changelog
 
+## [0.4.0.0] - 2026-04-01
+
+### Added
+
+- `app.py` — Flask web UI with filesystem-session backend. Add items via form, get proportional and cross-media recommendations rendered in Bootstrap 5 dark-theme UI. Run with `flask run --host=0.0.0.0 --port=5000`.
+- `templates/index.html` — Single-page UI with add/remove/list/recommend/clear flows, aria-labels for accessibility, standalone CTA card.
+- `USAGE.md` — Quickstart guide covering installation, UI usage, CLI, environment variables, and deploy notes.
+- `.env.example` — Template with `OPENAI_API_KEY`, `FLASK_SECRET_KEY`, and `MODEL` variables.
+
+### Changed
+
+- `recommend.py` functions (`infer_taste`, `generate_recommendations`) are now imported directly by `app.py` — no duplication.
+
 ## [0.3.0.0] - 2026-04-01
 
 ### Changed
