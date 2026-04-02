@@ -67,7 +67,13 @@
           {% for t in media_types %}
           <option value="{{ t }}">{{ t }}</option>
           {% endfor %}
+          <option value="__other__">other</option>
         </select>
+      </div>
+      <div class="col-3" id="custom_type_wrap" style="display:none;">
+        <label for="custom_type" class="form-label text-muted small">Custom type</label>
+        <input type="text" class="form-control" id="custom_type" name="custom_type"
+               placeholder="e.g. anime, podcast…" autocomplete="off">
       </div>
       <div class="col-2">
         <button type="submit" class="btn btn-primary w-100">Add</button>
@@ -185,5 +191,39 @@
   {% endif %}
 
 </div>
+  <script>
+    const typeSelect = document.getElementById('media_type');
+    const customWrap = document.getElementById('custom_type_wrap');
+    const customInput = document.getElementById('custom_type');
+
+    typeSelect.addEventListener('change', function() {
+      if (this.value === '__other__') {
+        customWrap.style.display = 'block';
+        customInput.required = true;
+        customInput.focus();
+      } else {
+        customWrap.style.display = 'none';
+        customInput.required = false;
+        customInput.value = '';
+      }
+    });
+
+    // When "other" is selected, enable custom type and swap names so it submits as media_type
+    typeSelect.addEventListener('change', function() {
+      if (this.value === '__other__') {
+        customWrap.style.display = 'block';
+        customInput.required = true;
+        customInput.name = 'media_type';   // submit as media_type
+        typeSelect.name = '_media_type';  // exclude from submit
+        customInput.focus();
+      } else {
+        customWrap.style.display = 'none';
+        customInput.required = false;
+        customInput.value = '';
+        customInput.name = '_custom_type';  // exclude from submit
+        typeSelect.name = 'media_type';      // submit as media_type
+      }
+    });
+  </script>
 </body>
 </html>
