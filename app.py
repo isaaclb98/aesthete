@@ -21,6 +21,14 @@ os.makedirs("app_session", exist_ok=True)
 
 Session(app)
 
+# Custom Jinja2 filter to strip curly braces from text (e.g. LLM output that contains literal {/})
+@app.template_filter("strip_braces")
+def strip_braces(text):
+    if not text:
+        return ""
+    return str(text).replace("{", "").replace("}", "")
+
+
 # Import the recommendation functions directly from recommend.py
 from recommend import (
     generate_recommendations,

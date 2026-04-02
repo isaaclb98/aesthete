@@ -11,7 +11,7 @@ Favourites:
 
 Your task: generate recommendations that genuinely match the user's taste profile. Generate TWO kinds of recommendations:
 
-1. **Proportional recommendations** — within the media types the user listed. Match the INPUT PROPORTIONS as a soft guide: if 80% of their input is films and 20% is albums, lean in that direction. This reflects where the user's aesthetic attention actually lives.
+1. **Proportional recommendations** — within the media types the user listed. Match the INPUT PROPORTIONS as a soft guide: if 80% of their input is films and 20% is albums, lean in that direction. Generate at least 10-15 total items across all media types.
 
 2. **Cross-media recommendations** — things in media types the user did NOT mention but would genuinely love based on their taste profile and the discovery_leverage signal. These are out-of-left-field discoveries. Think: what does someone who loves Factorio, Dark Souls, and Dwarf Fortress love that they've never considered in another medium?
 

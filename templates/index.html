@@ -14,8 +14,9 @@
     .btn-primary:hover { background: #2ea043; border-color: #2ea043; }
     .btn-outline-secondary { border-color: #30363d; color: #8b949e; }
     .btn-outline-secondary:hover { background: #21262d; border-color: #8b949e; color: #e6edf3; }
-    .text-muted { color: #8b949e !important; }
-    .rec-card { background: #0d1117; border-color: #30363d; }
+    .text-muted { color: #adbac7 !important; }
+    .form-label { color: #adbac7; }
+    .rec-card { background: #161b22; border-color: #30363d; border-left: 3px solid #388bfd; }
     .badge { background: #388bfd26; color: #58a6ff; }
     h1, h2, h5 { color: #e6edf3; }
     .section-divider { border-color: #30363d; }
@@ -113,19 +114,19 @@
     <h2 class="h5 mb-3">Taste Analysis</h2>
     <div class="mb-3">
       <p class="text-muted small mb-1">Core dimensions</p>
-      <p class="mb-2" style="color:#e6edf3;">{{ taste_analysis.core_dimensions }}</p>
+      <p class="mb-2" style="color:#e6edf3;">{{ taste_analysis.core_dimensions | strip_braces }}</p>
     </div>
     <div class="mb-3">
       <p class="text-muted small mb-1">Resonant qualities</p>
-      <p class="mb-2" style="color:#e6edf3;">{{ taste_analysis.resonant_qualities }}</p>
+      <p class="mb-2" style="color:#e6edf3;">{{ taste_analysis.resonant_qualities | strip_braces }}</p>
     </div>
     <div class="mb-3">
       <p class="text-muted small mb-1">Negative space</p>
-      <p class="mb-2" style="color:#e6edf3;">{{ taste_analysis.negative_space }}</p>
+      <p class="mb-2" style="color:#e6edf3;">{{ taste_analysis.negative_space | strip_braces }}</p>
     </div>
     <div>
       <p class="text-muted small mb-1">Discovery leverage</p>
-      <p class="mb-0" style="color:#e6edf3;">{{ taste_analysis.discovery_leverage }}</p>
+      <p class="mb-0" style="color:#e6edf3;">{{ taste_analysis.discovery_leverage | strip_braces }}</p>
     </div>
   </div>
 
@@ -137,10 +138,10 @@
     <div class="mb-3">
       <p class="text-muted small mb-2">[{{ media_type }}]</p>
       {% for rec in recs %}
-      <div class="rec-card card p-2 mb-2">
+      <div class="rec-card card p-3 mb-3">
         <div class="d-flex justify-content-between align-items-start">
           <div>
-            <strong>{{ rec.rank }}. {{ rec.name }}</strong>
+            <strong>{% if recs|length > 1 %}{{ rec.rank }}. {% endif %}{{ rec.name }}</strong>
             {% if rec.year %} <span class="text-muted">({{ rec.year }})</span>{% endif %}
           </div>
           {% if rec.confidence %}
